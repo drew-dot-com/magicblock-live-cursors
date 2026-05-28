@@ -7,6 +7,7 @@ import {
   DEVNET_WS,
   ER_RPC,
   ER_WS,
+  DELEGATION_PROGRAM_ID,
 } from "./lib/config";
 import {
   ixInitialize,
@@ -75,16 +76,22 @@ export default function App() {
           }
         }
 
-        // Check if already delegated by querying the ER for the cursor account.
-        const erAcct = await er.getAccountInfo(selfPda, "confirmed");
-        if (erAcct) {
+        // The cursor PDA's account-owner on devnet is the source of truth for
+        // delegation state: if it's the delegation program, we're delegated;
+        // if it's our own program, we still need to delegate. Querying the ER
+        // doesn't work — the ER retains a stale cached view of accounts even
+        // after commit_and_undelegate, so erAcct existing means nothing.
+        const acct = await devnet.getAccountInfo(selfPda, "confirmed");
+        const isDelegated =
+          !!acct && acct.owner.toBase58() === DELEGATION_PROGRAM_ID;
+
+        if (isDelegated) {
           setPhase("live");
           return;
         }
 
-        setPhase("initializing");
-        const acct = await devnet.getAccountInfo(selfPda, "confirmed");
         if (!acct) {
+          setPhase("initializing");
           await sendIx(devnet, session, ixInitialize(session.publicKey, myColor), {
             skipPreflight: false,
           });
